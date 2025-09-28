@@ -1,0 +1,23 @@
+# Arquivos e pastas a serem ignorados pelo Git
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.bak
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.env
+.idea/
+.vscode/
+simulation_output_*.csv
+shading_cache_*.csv
+Outdoor Thermometer_export_*.csv
+chuva.xlsx
+config.xml
+desktop.ini

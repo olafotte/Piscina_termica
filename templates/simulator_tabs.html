@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulador Horário de Custo da Piscina</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.167.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.167.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class=flashes>
+        {% for category, message in messages %}
+          <li class="{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    <div id="loading-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; flex-direction: column; color: white; font-size: 1.5em;">
+        <p>Calculando... Por favor, aguarde.</p>
+        <div class="loader"></div>
+    </div>
+    <h1>Simulador Horário de Custo da Piscina</h1>
+    <div class="container">
+        <div class="form-section">
+            <h2>Parâmetros</h2>
+            
+            {% if xml_files %}
+            <form method="GET" id="config-selector-form" style="margin-bottom: 1em; background-color: #f0f8ff; padding: 15px; border-radius: 8px; border: 1px solid #d1e7fd;">
+                <div class="form-grid">
+                    <div class="full-width">
+                        <label for="config_file" style="font-weight: bold; color: #0056b3;">Arquivo de Cenário:</label>
+                        <select name="config_file" id="config_file" onchange="this.form.submit()" class="config-select">
+                            {% for xml_file in xml_files %}
+                                <option value="{{ xml_file.filename }}" 
+                                        title="Descrição: {{ xml_file.description }}&#10;Criado em: {{ xml_file.creation_date }}"
+                                        {% if xml_file.filename == selected_config %}selected{% endif %}>
+                                    {{ xml_file.filename }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </form>
+            {% endif %}
+
+            <form method="POST" onsubmit="document.getElementById('loading-overlay').style.display = 'flex';">
+                <input type="hidden" name="config_file" value="{{ selected_config }}">
+                <div class="form-grid">
+                    
+                    <div>
+                        <label for="desired_temp">Temperatura Desejada (°C):</label>
+                        <input type="number" id="desired_temp" name="desired_temp" value="{{ p.desired_temp }}" required>
+                    </div>
+                    
+                    <div>
+                        <label for="cover_factor">Fator de Cobertura (0.1-1.0):</label>
+                        <input type="number" step="0.05" id="cover_factor" name="cover_factor" value="{{ p.cover_factor }}" required>
+                    </div>
+                    <div>
+                        <label for="electricity_cost">Custo da Eletricidade (R$/kWh):</label>
+                        <input type="number" step="0.01" id="electricity_cost" name="electricity_cost" value="{{ p.electricity_cost }}" required>
+                    </div>
+                    <div>
+                        <label for="num_apartments">Número de apartamentos:</label>
+                        <input type="number" id="num_apartments" name="num_apartments" value="{{ p.num_apartments }}" required>
+                    </div>
+                    <div>
+                        <label for="cop_min">COP Mínimo:</label>
+                        <input type="number" step="0.1" id="cop_min" name="cop_min" value="{{ p.cop_min }}" required>
+                    </div>
+                    <div>
+                        <label for="cop_max">COP Máximo:</label>
+                        <input type="number" step="0.1" id="cop_max" name="cop_max" value="{{ p.cop_max }}" required>
+                    </div>
+                    
+                    <div>
+                        <label for="power_percentile">Percentil de Potência (%):</label>
+                        <input type="number" step="1" id="power_percentile" name="power_percentile" value="{{ p.power_percentile }}" required>
+                    </div>
+                    <div class="full-width">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="ignore_solar_on_rain" value="1" {% if p.ignore_solar_on_rain %}checked{% endif %}>
+                            Desconsiderar ganho solar em dias de chuva
+                        </label>
+                    </div>
+                    <div class="full-width">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="use_heater_schedule" value="1" {% if p.use_heater_schedule %}checked{% endif %}>
+                            Usar programação para desligar aquecedor
+                        </label>
+                    </div>
+                    <div>
+                        <label for="heater_off_date">Desligar em (DD/MM):</label>
+                        <input type="text" id="heater_off_date" name="heater_off_date" value="{{ p.heater_off_date }}">
+                    </div>
+                    <div>
+                        <label for="heater_on_date">Religar em (DD/MM):</label>
+                        <input type="text" id="heater_on_date" name="heater_on_date" value="{{ p.heater_on_date }}">
+                    </div>
+                    <div class="full-width">
+                        <button type="submit">Calcular Simulação Anual</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        {% if results %}
+        <div class="results-section">
+            <div class="tab-nav">
+                <button class="tab-button active" data-tab-name="resumo">Resumo</button>
+                <button class="tab-button" data-tab-name="relatorio">Relatório</button>
+                <button class="tab-button" data-tab-name="graficos">Gráficos</button>
+                <button class="tab-button" data-tab-name="mensal">Mensal</button>
+                <button class="tab-button" data-tab-name="diario" id="diario-tab-button">Diário</button>
+                <button class="tab-button" data-tab-name="horario">Hora a Hora</button>
+                <button class="tab-button" data-tab-name="visualizador">Visualizador 3D</button>                
+            </div>
+
+            <div id="resumo" class="tab-content active">
+                <h3>Resumo Anual</h3>
+                <div class="total-summary">
+                    <h3>Consumo Anual Total: {{ "%.0f"|format(results.total_kwh) }} kWh</h3>
+                    <h2>Custo Anual Total: R$ {{ "%.2f"|format(results.total_cost) }}</h2>
+                    {% if results.monthly_cost_per_apartment is defined %}
+                    <h3>Custo Mensal Médio por Apartamento: R$ {{ "%.2f"|format(results.monthly_cost_per_apartment) }}</h3>
+                    {% endif %}
+                    <h3>Potência Dimensionada da Bomba ({{ "%.0f"|format(p.power_percentile) }}%): {{ "%.1f"|format(results.required_power_kw) }} kW</h3>
+                    <p style="font-size: 1.1em; color: #0056b3; margin-top: 0.5em;"><strong>{{ results.resultado_bomba }}</strong></p>
+                    
+                    <div style="margin-top: 1.5em; padding-top: 1.5em; border-top: 1px solid #ccc;">
+                        <h4>Estimativa de Sistema Solar Fotovoltaico (para compensar o consumo):</h4>
+                        <p><strong>Potência de Pico Necessária:</strong> {{ "%.1f"|format(results.solar_heating_system.potencia_de_pico_kWp) }} kWp</p>
+                        <p><strong>Custo de Instalação Estimado:</strong> R$ {{ "%.2f"|format(results.solar_heating_system.custo_mais_baixo_reais) }} a R$ {{ "%.2f"|format(results.solar_heating_system.custo_mais_alto_reais) }}</p>
+                        <p><strong>Tempo de Payback do Sistema Solar:</strong> {{ "%.1f"|format(results.solar_payback_years) }} anos</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="relatorio" class="tab-content" style="padding: 0 2em;">
+                <h3>Relatório</h3>
+                <textarea id="report-text" style="width: 100%; height: 60vh; font-family: monospace; font-size: 12px; white-space: pre; padding: 1em; border-radius: 5px; border: 1px solid #ccc;" readonly>{{ results.report_text }}</textarea>
+                <button onclick="copyReport()" style="margin-top: 1em; width: auto; padding: 10px 15px;">Copiar Relatório</button>
+            </div>
+
+            <div id="graficos" class="tab-content">
+                <h3>Gráficos de Análise</h3>
+                <div>{{ results.temp_chart_html | safe }}</div>
+                <div>{{ results.solar_chart_html | safe }}</div>
+                <div>{{ results.heater_chart_html | safe }}</div>
+                <div>{{ results.power_hist_chart_html | safe }}</div>
+                <div>{{ results.hourly_solar_chart_html | safe }}</div>
+            </div>
+
+            <div id="mensal" class="tab-content">
+                <h3>Detalhes Mensais</h3>
+                <table>
+                    <thead><tr><th>Mês</th><th>Custo (R$)</th><th>Consumo (kWh)</th></tr></thead>
+                    <tbody>
+                    {% for row in results.monthly %}
+                        <tr style="cursor: pointer;" onclick="showDailyForMonth('{{ row.timestamp.strftime('%Y-%m')}}')">
+                            <td>{{ row.timestamp.strftime('%Y-%m') }}</td>
+                            <td>{{ "%.2f"|format(row.cost_hour) }}</td>
+                            <td>{{ "%.0f"|format(row.consumed_kwh) }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="diario" class="tab-content">
+                <h3>Detalhes Diários</h3>
+                <div style="max-height: 400px; overflow-y: auto;">
+                <table>
+                    <thead><tr><th>Dia</th><th>Custo (R$)</th><th>Consumo (kWh)</th><th>Fator de Sombreamento Médio</th></tr></thead>
+                    <tbody>
+                    {% for row in results.daily %}
+                        <tr style="cursor: pointer;" onclick="showHourlyForDay('{{ row.timestamp.strftime('%Y-%m-%d') }}')">
+                            <td>{{ row.timestamp.strftime('%Y-%m-%d')}}</td>
+                            <td>{{ "%.2f"|format(row.cost_hour) }}</td>
+                            <td>{{ "%.0f"|format(row.consumed_kwh) }}</td>
+                            <td>{{ "%.2f"|format(row.hourly_shading) }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </div>
+
+            <div id="horario" class="tab-content">
+                <h3>Detalhes Hora a Hora</h3>
+                <div style="max-height: 400px; overflow-y: auto;">
+                <table id="hourly-table">
+                    <thead>
+                        <tr>
+                            <th>Data/Hora</th>
+                            <th>Custo (R$)</th>
+                            <th>Consumo (kWh)</th>
+                            <th>Fator de Sombreamento</th>
+                            <th>Calor Bomba (Wh)</th>
+                            <th>Calor Solar (Wh)</th>
+                            <th>Perda Evaporação (Wh)</th>
+                            <th>Temp. Água Início (°C)</th>
+                            <th>Temp. Água Fim (°C)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+            <div id="visualizador" class="tab-content">
+                {% include 'visualizador_content.html' %}
+            </div>
+        </div>
+        
+        <div id="data-container" data-hourly-data='{{ results.hourly | tojson | safe }}' data-daily-data='{{ results.daily | tojson | safe }}' style="display: none;"></div>
+        {% endif %}
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // --- VARIÁVEIS GLOBAIS ---
+    let scene, camera, renderer, controls, sunLight, container;
+    let config; // Declare a variável config para ser usada globalmente
+
+    // --- FUNÇÕES DE CRIAÇÃO DE OBJETOS ---
+    function createGround() {
+        const geometry = new THREE.PlaneGeometry(config.ground.size, config.ground.size);
+        const material = new THREE.MeshStandardMaterial({ color: config.ground.color });
+        const ground = new THREE.Mesh(geometry, material);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        return ground;
+    }
+
+    function createPool() {
+        const geometry = new THREE.BoxGeometry(config.pool.width, config.pool.thickness, config.pool.length);
+        const material = new THREE.MeshStandardMaterial({ color: config.pool.color, transparent: true, opacity: config.pool.opacity });
+        const pool = new THREE.Mesh(geometry, material);
+        pool.position.y = config.pool.yPosition;
+        pool.rotation.y = THREE.MathUtils.degToRad(config.pool.rotation);
+        pool.receiveShadow = true;
+        return pool;
+    }
+
+    function createBlock(blockConfig) {
+        const geometry = new THREE.BoxGeometry(blockConfig.width, blockConfig.height, blockConfig.length);
+        const material = new THREE.MeshStandardMaterial({ color: blockConfig.color });
+        const block = new THREE.Mesh(geometry, material);
+
+        block.position.set(blockConfig.x, blockConfig.height / 2, blockConfig.z);
+        block.rotation.y = THREE.MathUtils.degToRad(blockConfig.angle);
+        block.castShadow = true;
+        return block;
+    }
+
+    function createCardinalDirectionLabel(text, position) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = 'Bold 60px Arial';
+        context.fillStyle = 'rgba(0, 0, 0, 1)';
+        context.fillText(text, 0, 60);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(material);
+
+        sprite.position.copy(position);
+        sprite.scale.set(10, 5, 1); // Adjust scale as needed
+        return sprite;
+    }
+
+    // --- FUNÇÃO DE INICIALIZAÇÃO DO THREE.JS ---
+    function initThreeJS() { // Renamed to avoid conflict
+        container = document.getElementById('container');
+        if (!container) {
+            console.error("Element with id 'container' not found.");
+            return;
+        }
+
+        // 1. Cena
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(config.scene.backgroundColor);
+
+        // 2. Câmera
+        camera = new THREE.PerspectiveCamera(config.camera.fov, container.clientWidth / container.clientHeight, config.camera.near, config.camera.far);
+        camera.position.set(config.camera.initialPosition.x, config.camera.initialPosition.y, config.camera.initialPosition.z);
+
+        // 3. Renderizador
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // 4. Controles
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Torna o listener de 'wheel' passive para evitar warning de performance
+        renderer.domElement.addEventListener('wheel', function() {}, { passive: true });
+
+        // 5. Luzes
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        sunLight = new THREE.DirectionalLight(0xffffff, config.sun.intensity);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = config.sun.shadowMapSize;
+        sunLight.shadow.mapSize.height = config.sun.shadowMapSize;
+        sunLight.shadow.camera.near = config.sun.shadowCamera.near;
+        sunLight.shadow.camera.far = config.sun.shadowCamera.far;
+        sunLight.shadow.camera.left = config.sun.shadowCamera.left;
+        sunLight.shadow.camera.right = config.sun.shadowCamera.right;
+        sunLight.shadow.camera.top = config.sun.shadowCamera.top;
+        sunLight.shadow.camera.bottom = config.sun.shadowCamera.bottom;
+        scene.add(sunLight);
+
+        // 6. Objetos da Cena
+        scene.add(createGround());
+        scene.add(createPool());
+
+        config.blocks.forEach(blockConfig => {
+            scene.add(createBlock(blockConfig));
+        });
+
+        const groundSize = config.ground.size / 2;
+        scene.add(createCardinalDirectionLabel('Norte', new THREE.Vector3(0, 0.1, -groundSize + 5)));
+        scene.add(createCardinalDirectionLabel('Sul', new THREE.Vector3(0, 0.1, groundSize - 5)));
+        scene.add(createCardinalDirectionLabel('Leste', new THREE.Vector3(groundSize - 5, 0.1, 0)));
+        scene.add(createCardinalDirectionLabel('Oeste', new THREE.Vector3(-groundSize + 5, 0.1, 0)));
+
+        // 7. Eventos
+        document.getElementById('datetime-input').addEventListener('change', updateSunPosition);
+
+        // 8. Inicialização
+        setDefaultDateTime();
+        updateSunPosition();
+        animate();
+        handleResize();
+    }
+
+    // --- FUNÇÕES DE ANIMAÇÃO E EVENTOS ---
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    function handleResize() {
+        if (!container || !renderer || !camera) return;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    }
+
+    function setDefaultDateTime() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const datetimeString = `${year}-${month}-${day}T${hours}:${minutes}`;
+        document.getElementById('datetime-input').value = datetimeString;
+    }
+
+    async function updateSunPosition() {
+        const datetime = document.getElementById('datetime-input').value;
+        if (!datetime) {
+            return;
+        }
+
+        const sunPositionEl = document.getElementById('sun-position');
+        sunPositionEl.textContent = 'Posição do Sol: Calculando...';
+
+        try {
+            const response = await fetch(`/api/solar-data?datetime=${datetime}`);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                let errorMessage = errorText;
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    if (errorJson && errorJson.error) {
+                        errorMessage = errorJson.error;
+                    }
+                } catch (e) {
+                    if (errorText.toLowerCase().includes('<!doctype html')) {
+                        errorMessage = `Erro no servidor (${response.status}). A rota da API pode não estar funcionando.`;
+                    }
+                }
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+
+            sunPositionEl.innerHTML = `Azimute: ${data.azimuth.toFixed(2)}° <br> Elevação: ${data.elevation.toFixed(2)}°`;
+
+            const elevationRad = THREE.MathUtils.degToRad(data.elevation);
+            const azimuthRad = THREE.MathUtils.degToRad(data.azimuth);
+
+            const sunDistance = config.sun.distance;
+            const x = sunDistance * Math.cos(elevationRad) * Math.sin(azimuthRad);
+            const y = sunDistance * Math.sin(elevationRad);
+            const z = -sunDistance * Math.cos(elevationRad) * Math.cos(azimuthRad);
+
+            sunLight.position.set(x, y, z);
+
+            const visualizerTabButton = document.querySelector('.tab-button[data-tab-name="visualizador"]');
+            console.log('Checking visualizer tab button:', visualizerTabButton);
+            if (visualizerTabButton && !visualizerTabButton.classList.contains('active')) {
+                console.log('Clicking visualizer tab button.');
+                visualizerTabButton.click();
+            }
+
+        } catch (error) {
+            sunPositionEl.textContent = `Erro: ${error.message}`;
+            console.error(error);
+        }
+    }
+
+    // Observe the container for size changes
+    const visualizerTab = document.getElementById('visualizador');
+    if (visualizerTab) {
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                if(entry.target.id === 'visualizador') {
+                    handleResize();
+                }
+            }
+        });
+        resizeObserver.observe(visualizerTab);
+    }
+
+    // --- FUNÇÃO DE INICIALIZAÇÃO PRINCIPAL ---
+    async function init() {
+        // Busca a configuração do backend ANTES de construir a cena
+        try {
+            const response = await fetch('/api/scene-config');
+            if (!response.ok) throw new Error('Falha ao buscar a configuração da cena.');
+            config = await response.json();
+        } catch (error) {
+            console.error(error);
+            console.warn("Usando configuração de cena 3D de fallback.");
+            // Assign a generic fallback configuration
+            config = {
+                scene: { backgroundColor: '#d3d3d3' },
+                ground: { size: 200, color: '#8fbc8f' },
+                pool: {
+                    length: 17.0, width: 4.0, thickness: 0.2, rotation: 74,
+                    yPosition: 0.1, color: '#add8e6', opacity: 0.8
+                },
+                blocks: [
+                    { width: 41, length: 25, height: 18, x: 8.3, z: -17.92, angle: -16, color: '#d2b48c' },
+                    { width: 14, length: 37, height: 24, x: 33.11, z: -4.69, angle: -16, color: '#d2b48c' },
+                    { width: 20, length: 20, height: 50, x: -10.33, z: 20.23, angle: -16, color: '#d2b48c' }
+                ],
+                camera: {
+                    fov: 75, near: 0.1, far: 1000,
+                    initialPosition: { x: 50, y: 70, z: 50 }
+                },
+                sun: {
+                    intensity: 1.5,
+                    distance: 500,
+                    shadowMapSize: 2048,
+                    shadowCamera: { near: 50, far: 1500, left: -100, right: 100, top: 100, bottom: -100 }
+                }
+            };
+        }
+        initThreeJS(); // Call the Three.js initialization after config is loaded
+    }
+
+    // Chame a função init no final
+    document.addEventListener('DOMContentLoaded', init);
+</script>

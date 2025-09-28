@@ -1,0 +1,7 @@
+Flask
+pandas
+tqdm
+plotly
+pvlib
+openpyxl
+shapely
