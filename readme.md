@@ -25,6 +25,14 @@ Este projeto é um sistema web para simulação térmica de piscinas, permitindo
 5. Configure os parâmetros desejados e execute a simulação
 6. Visualize os gráficos, relatório e exporte os resultados
 
+## Arquivos auxiliares
+
+- `visualizador.py`: Arquivo auxiliar para visualizar o esquema 3D de sol e sombras.
+- `calculo_piscina.py`: Rotina simples para balanço energético.
+- `config.xml`: Exemplo de arquivo de configuração da piscina e aquecimento.
+- `Outdoor Thermometer_export_202508100845.csv`: Exemplo de arquivo de dados meteorológicos.
+- `chuva.xls`: Exemplo de arquivo meteorológico. Dados da defesa civil de Blumenau.
+
 ## Estrutura do Projeto
 - `pool_simulator_app.py`: Backend principal (Flask, simulação física)
 - `templates/`: Templates HTML para interface web
