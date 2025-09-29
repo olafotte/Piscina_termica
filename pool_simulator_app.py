@@ -89,6 +89,20 @@ def load_config_from_xml(file_path):
         sim_defaults_root = root.find('simulation_defaults')
         config['default_params'] = {child.tag: to_num(child.text) for child in sim_defaults_root}
 
+        # Data Files
+        data_files_root = root.find('data_files')
+        if data_files_root is not None:
+            config['data_files'] = {
+                'chuva_file': data_files_root.find('chuva_file').text,
+                'thermometer_file': data_files_root.find('thermometer_file').text
+            }
+        else:
+            # Fallback to hardcoded values if not in config
+            config['data_files'] = {
+                'chuva_file': 'chuva.xlsx',
+                'thermometer_file': 'Outdoor Thermometer_export_202508100845.csv'
+            }
+
         return config
     except (ET.ParseError, FileNotFoundError, AttributeError) as e:
         flash(f"Erro crítico ao carregar o arquivo de configuração '{file_path}': {e}", "error")
@@ -437,17 +451,17 @@ class FinancialAnalyzer:
 def format_price(price):
     return f"R$ {price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def load_and_merge_data(timezone):
+def load_and_merge_data(timezone, thermometer_file, chuva_file):
     """Loads and merges temperature and rain data, using the provided timezone."""
     try:
-        df_temp = pd.read_csv('Outdoor Thermometer_export_202508100845.csv', usecols=[0,1,2], names=['timestamp', 'temp_air', 'humidity'], header=0, encoding='utf-8')
+        df_temp = pd.read_csv(thermometer_file, usecols=[0,1,2], names=['timestamp', 'temp_air', 'humidity'], header=0, encoding='utf-8')
         df_temp['timestamp'] = pd.to_datetime(df_temp['timestamp'], errors='coerce').dt.tz_localize(timezone, ambiguous='infer')
         df_temp = df_temp.dropna().set_index('timestamp').resample('h').mean().interpolate()
     except Exception as e:
         return None, f"Erro ao processar arquivo de temperatura: {e}"
 
     try:
-        df_rain = pd.read_excel('chuva.xlsx', usecols=[0,1], names=['timestamp', 'rain'], header=0)
+        df_rain = pd.read_excel(chuva_file, usecols=[0,1], names=['timestamp', 'rain'], header=0)
         df_rain['timestamp'] = pd.to_datetime(df_rain['timestamp'], errors='coerce').dt.tz_localize(timezone, ambiguous='infer')
         df_rain['is_raining'] = (df_rain['rain'] > 0)
         df_rain = df_rain.dropna().set_index('timestamp')[['is_raining']].resample('h').max()
@@ -645,7 +659,11 @@ def simulator_route():
     DEFAULT_PARAMS = config['default_params']
     METADATA = config['metadata']
 
-    all_data, startup_error = load_and_merge_data(LOCATION['timezone'])
+    DATA_FILES = config.get('data_files', {})
+    thermometer_file = DATA_FILES.get('thermometer_file', 'Outdoor Thermometer_export_202508100845.csv')
+    chuva_file = DATA_FILES.get('chuva_file', 'chuva.xlsx')
+
+    all_data, startup_error = load_and_merge_data(LOCATION['timezone'], thermometer_file, chuva_file)
     if startup_error:
         flash(f"Erro na Carga de Dados: {startup_error}", "error")
         return render_template('simulator_tabs.html', p={}, xml_files=xml_files_metadata, selected_config=config_file_to_load, results=None)

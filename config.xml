@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+    <metadata>
+        <description>Configuração Padrão do Sistema</description>
+        <creation_date>2025-09-14 18:00:00</creation_date>
+    </metadata>
+    <location>
+        <latitude>-26.926</latitude>
+        <longitude>-49.068</longitude>
+        <altitude>0</altitude>
+        <timezone>America/Sao_Paulo</timezone>
+    </location>
+    <scene>
+        <pool length="17.0" width="4.0" rotation="74" depth="0.8" />
+        <blocks>
+            <block width="41" length="25" height="18" x="8.3" z="-17.92" angle="-16" color="#d2b48c" />
+            <block width="14" length="37" height="24" x="33.11" z="-4.69" angle="-16" color="#d2b48c" />
+            <block width="20" length="20" height="50" x="-10.33" z="20.23" angle="-16" color="#d2b48c" />
+        </blocks>
+    </scene>
+    <visualization>
+        <scene backgroundColor="#d3d3d3" />
+        <ground size="200" color="#8fbc8f" />
+        <camera fov="75" near="0.1" far="1000">
+            <initialPosition x="50" y="70" z="50" />
+        </camera>
+        <sun intensity="1.5" distance="500" shadowMapSize="2048">
+            <shadowCamera near="50" far="1500" left="-100" right="100" top="100" bottom="-100" />
+        </sun>
+        <pool_visual thickness="0.2" yPosition="0.1" color="#add8e6" opacity="0.8" />
+    </visualization>
+    <simulation_defaults>
+        <desired_temp>30.0</desired_temp>
+        <cover_factor>1.0</cover_factor>
+        <electricity_cost>0.78</electricity_cost>
+        <ignore_solar_on_rain>1</ignore_solar_on_rain>
+        <num_apartments>26</num_apartments>
+        <cop_min>4.0</cop_min>
+        <cop_max>6.0</cop_max>
+        <use_heater_schedule>1</use_heater_schedule>
+        <heater_off_date>01/06</heater_off_date>
+        <heater_on_date>30/09</heater_on_date>
+        <power_percentile>80.0</power_percentile>
+    </simulation_defaults>
+    <data_files>
+        <chuva_file>chuva.xlsx</chuva_file>
+        <thermometer_file>Outdoor Thermometer_export_202508100845.csv</thermometer_file>
+    </data_files>
+</config>

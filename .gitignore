@@ -17,7 +17,4 @@ Thumbs.db
 .vscode/
 simulation_output_*.csv
 shading_cache_*.csv
-Outdoor Thermometer_export_*.csv
-chuva.xlsx
-config.xml
 desktop.ini
